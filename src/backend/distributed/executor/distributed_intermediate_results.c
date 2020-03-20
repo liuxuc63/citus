@@ -556,7 +556,7 @@ FragmentTransferTaskList(List *fragmentListTransfers)
 		SetPlacementNodeMetadata(targetPlacement, workerNode);
 
 		Task *task = CitusMakeNode(Task);
-		task->taskType = SELECT_TASK;
+		task->taskType = READ_TASK;
 		SetTaskQueryString(task, QueryStringForFragmentsTransfer(fragmentsTransfer));
 		task->taskPlacementList = list_make1(targetPlacement);
 
