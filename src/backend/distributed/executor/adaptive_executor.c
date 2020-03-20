@@ -579,7 +579,7 @@ static bool IsMultiShardModification(RowModifyLevel modLevel, List *taskList);
 static bool TaskListModifiesDatabase(RowModifyLevel modLevel, List *taskList);
 static bool DistributedExecutionRequiresRollback(List *taskList);
 static bool TaskListRequires2PC(List *taskList);
-static bool SelectForUpdateOnReferenceTable(RowModifyLevel modLevel, List *taskList);
+static bool SelectForUpdateOnReferenceTable(List *taskList);
 static void AssignTasksToConnectionsOrWorkerPool(DistributedExecution *execution);
 static void UnclaimAllSessionConnections(List *sessionList);
 static bool UseConnectionPerPlacement(void);
@@ -1447,13 +1447,8 @@ ReadOnlyTask(TaskType taskType)
  * that contains FOR UPDATE clause that locks any reference tables.
  */
 static bool
-SelectForUpdateOnReferenceTable(RowModifyLevel modLevel, List *taskList)
+SelectForUpdateOnReferenceTable(List *taskList)
 {
-	if (modLevel != ROW_MODIFY_READONLY)
-	{
-		return false;
-	}
-
 	if (list_length(taskList) != 1)
 	{
 		/* we currently do not support SELECT FOR UPDATE on multi task queries */
@@ -1524,7 +1519,7 @@ AcquireExecutorShardLocksForExecution(DistributedExecution *execution)
 	List *taskList = execution->tasksToExecute;
 
 	if (modLevel <= ROW_MODIFY_READONLY &&
-		!SelectForUpdateOnReferenceTable(modLevel, taskList))
+		!SelectForUpdateOnReferenceTable(taskList))
 	{
 		/*
 		 * Executor locks only apply to DML commands and SELECT FOR UPDATE queries
@@ -1705,6 +1700,7 @@ AssignTasksToConnectionsOrWorkerPool(DistributedExecution *execution)
 												sizeof(TaskPlacementExecution *));
 		shardCommandExecution->placementExecutionCount = placementExecutionCount;
 
+		/* TODO yes if select with modifying cte */
 		shardCommandExecution->expectResults =
 			(hasReturning && !task->partiallyLocalOrRemote) ||
 			modLevel == ROW_MODIFY_READONLY;
