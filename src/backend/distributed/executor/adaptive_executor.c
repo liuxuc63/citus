@@ -188,7 +188,7 @@ typedef struct DistributedExecution
 	List *localTaskList;
 
 	/* the corresponding distributed plan has RETURNING */
-	bool hasReturning;
+	bool expectResults;
 
 	/* Parameters for parameterized plans. Can be NULL. */
 	ParamListInfo paramListInfo;
@@ -548,7 +548,7 @@ typedef struct TaskPlacementExecution
 /* local functions */
 static DistributedExecution * CreateDistributedExecution(RowModifyLevel modLevel,
 														 List *taskList,
-														 bool hasReturning,
+														 bool expectResults,
 														 ParamListInfo paramListInfo,
 														 TupleDesc tupleDescriptor,
 														 Tuplestorestate *tupleStore,
@@ -697,7 +697,7 @@ AdaptiveExecutor(CitusScanState *scanState)
 	DistributedExecution *execution = CreateDistributedExecution(
 		distributedPlan->modLevel,
 		taskList,
-		distributedPlan->hasReturning,
+		distributedPlan->expectResults,
 		paramListInfo,
 		tupleDescriptor,
 		scanState->tuplestorestate,
@@ -729,7 +729,7 @@ AdaptiveExecutor(CitusScanState *scanState)
 		RunDistributedExecution(execution);
 	}
 
-	if (distributedPlan->modLevel != ROW_MODIFY_READONLY)
+	if (job->jobQuery->commandType != CMD_SELECT)
 	{
 		if (list_length(execution->localTaskList) == 0)
 		{
@@ -756,7 +756,8 @@ AdaptiveExecutor(CitusScanState *scanState)
 		DoRepartitionCleanup(jobIdList);
 	}
 
-	if (SortReturning && distributedPlan->hasReturning)
+	if (SortReturning && distributedPlan->expectResults && job->jobQuery->commandType !=
+		CMD_SELECT)
 	{
 		SortTupleStore(scanState);
 	}
@@ -887,7 +888,7 @@ ExecuteTaskList(RowModifyLevel modLevel, List *taskList,
 uint64
 ExecuteTaskListIntoTupleStore(RowModifyLevel modLevel, List *taskList,
 							  TupleDesc tupleDescriptor, Tuplestorestate *tupleStore,
-							  bool hasReturning)
+							  bool expectResults)
 {
 	int targetPoolSize = MaxAdaptiveExecutorPoolSize;
 	bool localExecutionSupported = true;
@@ -897,7 +898,7 @@ ExecuteTaskListIntoTupleStore(RowModifyLevel modLevel, List *taskList,
 
 	executionParams->xactProperties = DecideTransactionPropertiesForTaskList(
 		modLevel, taskList, false);
-	executionParams->hasReturning = hasReturning;
+	executionParams->expectResults = expectResults;
 	executionParams->tupleStore = tupleStore;
 	executionParams->tupleDescriptor = tupleDescriptor;
 
@@ -960,7 +961,7 @@ ExecuteTaskListExtended(ExecutionParams *executionParams)
 	DistributedExecution *execution =
 		CreateDistributedExecution(
 			executionParams->modLevel, remoteTaskList,
-			executionParams->hasReturning, paramListInfo,
+			executionParams->expectResults, paramListInfo,
 			executionParams->tupleDescriptor, executionParams->tupleStore,
 			executionParams->targetPoolSize, &executionParams->xactProperties,
 			executionParams->jobIdList);
@@ -991,7 +992,7 @@ CreateBasicExecutionParams(RowModifyLevel modLevel,
 
 	executionParams->tupleStore = NULL;
 	executionParams->tupleDescriptor = NULL;
-	executionParams->hasReturning = false;
+	executionParams->expectResults = false;
 	executionParams->isUtilityCommand = false;
 	executionParams->jobIdList = NIL;
 
@@ -1005,7 +1006,7 @@ CreateBasicExecutionParams(RowModifyLevel modLevel,
  */
 static DistributedExecution *
 CreateDistributedExecution(RowModifyLevel modLevel, List *taskList,
-						   bool hasReturning,
+						   bool expectResults,
 						   ParamListInfo paramListInfo, TupleDesc tupleDescriptor,
 						   Tuplestorestate *tupleStore, int targetPoolSize,
 						   TransactionProperties *xactProperties, List *jobIdList)
@@ -1015,7 +1016,7 @@ CreateDistributedExecution(RowModifyLevel modLevel, List *taskList,
 
 	execution->modLevel = modLevel;
 	execution->tasksToExecute = taskList;
-	execution->hasReturning = hasReturning;
+	execution->expectResults = expectResults;
 	execution->transactionProperties = xactProperties;
 
 	execution->localTaskList = NIL;
@@ -1666,7 +1667,7 @@ UnclaimAllSessionConnections(List *sessionList)
 
 
 /*
- * AssignTasksToConnectionsOrWorkerPool  goes through the list of tasks to determine whether any
+ * AssignTasksToConnectionsOrWorkerPool goes through the list of tasks to determine whether any
  * task placements need to be assigned to particular connections because of preceding
  * operations in the transaction. It then adds those connections to the pool and adds
  * the task placement executions to the assigned task queue of the connection.
@@ -1676,7 +1677,7 @@ AssignTasksToConnectionsOrWorkerPool(DistributedExecution *execution)
 {
 	RowModifyLevel modLevel = execution->modLevel;
 	List *taskList = execution->tasksToExecute;
-	bool hasReturning = execution->hasReturning;
+	bool expectResults = execution->expectResults;
 
 	int32 localGroupId = GetLocalGroupId();
 
@@ -1700,10 +1701,8 @@ AssignTasksToConnectionsOrWorkerPool(DistributedExecution *execution)
 												sizeof(TaskPlacementExecution *));
 		shardCommandExecution->placementExecutionCount = placementExecutionCount;
 
-		/* TODO yes if select with modifying cte */
 		shardCommandExecution->expectResults =
-			(hasReturning && !task->partiallyLocalOrRemote) ||
-			modLevel == ROW_MODIFY_READONLY;
+			expectResults && !task->partiallyLocalOrRemote;
 
 		ShardPlacement *taskPlacement = NULL;
 		foreach_ptr(taskPlacement, task->taskPlacementList)

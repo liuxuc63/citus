@@ -263,6 +263,7 @@ CreatePhysicalDistributedPlan(MultiTreeRoot *multiTree,
 	distributedPlan->masterQuery = masterQuery;
 	distributedPlan->routerExecutable = DistributedPlanRouterExecutable(distributedPlan);
 	distributedPlan->modLevel = ROW_MODIFY_READONLY;
+	distributedPlan->expectResults = true;
 
 	return distributedPlan;
 }
@@ -2249,7 +2250,7 @@ BuildJobTreeTaskList(Job *jobTree, PlannerRestrictionContext *plannerRestriction
 			Task *assignedSqlTask = (Task *) lfirst(assignedSqlTaskCell);
 
 			/* we don't support parameters in the physical planner */
-			if (assignedSqlTask->taskType == SELECT_TASK)
+			if (assignedSqlTask->taskType == READ_TASK)
 			{
 				assignedSqlTask->parametersInQueryStringResolved =
 					job->parametersInJobQueryResolved;
