@@ -1445,7 +1445,7 @@ ReadOnlyTask(TaskType taskType)
 
 /*
  * SelectForUpdateOnReferenceTable returns true if the input task
- * that contains FOR UPDATE clause that locks any reference tables.
+ * contains a FOR UPDATE clause that locks any reference tables.
  */
 static bool
 SelectForUpdateOnReferenceTable(List *taskList)
