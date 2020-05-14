@@ -21,8 +21,9 @@ extern bool ExplainWorkerQuery;
 extern void InstallExplainAnalyzeHooks(List *taskList);
 extern bool RequestedForExplainPlan(CustomScanState *node);
 extern void CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
-					ExplainState *es, const char *queryString, ParamListInfo params,
-					QueryEnvironment *queryEnv);
+								 ExplainState *es, const char *queryString, ParamListInfo
+								 params,
+								 QueryEnvironment *queryEnv);
 extern bool ShouldSaveQueryExplain(QueryDesc *queryDesc, int eflags);
 extern void SaveQueryExplain(QueryDesc *queryDesc);
 

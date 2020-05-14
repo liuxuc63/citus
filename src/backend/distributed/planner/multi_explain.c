@@ -69,7 +69,8 @@ bool ExplainDistributedQueries = true;
 bool ExplainAllTasks = false;
 bool ExplainWorkerQuery = false;
 
-typedef struct {
+typedef struct
+{
 	bool verbose;
 	bool costs;
 	bool buffers;
@@ -80,10 +81,10 @@ typedef struct {
 } ExplainOptions;
 
 static bool SaveTaskExplainPlans = false;
-static ExplainOptions TaskExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
+static ExplainOptions TaskExplainOptions = { 0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT };
 static StringInfo SavedExplainPlan = NULL;
 
-static ExplainOptions CurrentExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
+static ExplainOptions CurrentExplainOptions = { 0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT };
 
 
 /* Result for a single remote EXPLAIN command */
@@ -687,10 +688,10 @@ ShouldSaveQueryExplain(QueryDesc *queryDesc, int eflags)
 	PlannedStmt *plannedStmt = queryDesc->plannedstmt;
 
 	return SaveTaskExplainPlans &&
-			ExecutorLevel == 0 &&
-			!IsParallelWorker() &&
-			(eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0 &&
-			!IsCitusPlan(plannedStmt->planTree);
+		   ExecutorLevel == 0 &&
+		   !IsParallelWorker() &&
+		   (eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0 &&
+		   !IsCitusPlan(plannedStmt->planTree);
 }
 
 
@@ -723,7 +724,9 @@ SaveQueryExplain(QueryDesc *queryDesc)
 	ExplainPrintPlan(es, queryDesc);
 
 	if (es->costs)
+	{
 		ExplainPrintJITSummary(es, queryDesc);
+	}
 
 	ExplainEndOutput(es);
 
@@ -756,11 +759,13 @@ InstallExplainAnalyzeHooks(List *taskList)
 	}
 }
 
+
 static void
 SendExplainParams(Task *task, MultiConnection *connection)
 {
 	StringInfo query = makeStringInfo();
-	appendStringInfo(query, "SELECT save_explain_output_for_next_query(true, %s, %s, %s, %s, %s, %d)",
+	appendStringInfo(query,
+					 "SELECT save_explain_output_for_next_query(true, %s, %s, %s, %s, %s, %d)",
 					 CurrentExplainOptions.verbose ? "true" : "false",
 					 CurrentExplainOptions.costs ? "true" : "false",
 					 CurrentExplainOptions.timing ? "true" : "false",
@@ -780,7 +785,8 @@ static void
 FetchTaskExplainPlan(Task *task, MultiConnection *connection)
 {
 	PGresult *planResult = NULL;
-	int execResult = ExecuteOptionalRemoteCommand(connection, "SELECT last_saved_plan();", &planResult);
+	int execResult = ExecuteOptionalRemoteCommand(connection, "SELECT last_saved_plan();",
+												  &planResult);
 	if (execResult == RESPONSE_OKAY)
 	{
 		List *planList = ReadFirstColumnAsText(planResult);
@@ -814,6 +820,7 @@ last_saved_plan(PG_FUNCTION_ARGS)
 	}
 }
 
+
 PG_FUNCTION_INFO_V1(save_explain_output_for_next_query);
 Datum
 save_explain_output_for_next_query(PG_FUNCTION_ARGS)
@@ -844,8 +851,8 @@ CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
 	CurrentExplainOptions.query = ExplainWorkerQuery;
 
 	/* rest is copied from ExplainOneQuery() */
-	instr_time	planstart,
-				planduration;
+	instr_time planstart,
+			   planduration;
 
 	INSTR_TIME_SET_CURRENT(planstart);
 
@@ -857,8 +864,9 @@ CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
 
 	/* run it (if needed) and produce output */
 	ExplainOnePlan(plan, into, es, queryString, params, queryEnv,
-					&planduration);
+				   &planduration);
 }
+
 
 /* below are private functions copied from explain.c */
 

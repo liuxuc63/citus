@@ -136,7 +136,6 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
 		 */
 		if (queryDesc->totaltime == NULL)
 		{
-
 			MemoryContext oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
 			queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL);
 			MemoryContextSwitchTo(oldcxt);
@@ -250,6 +249,7 @@ CitusExecutorRun(QueryDesc *queryDesc,
 	}
 	PG_END_TRY();
 }
+
 
 void
 CitusExecutorEnd(QueryDesc *queryDesc)
