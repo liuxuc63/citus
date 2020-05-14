@@ -67,6 +67,23 @@
 /* Config variables that enable printing distributed query plans */
 bool ExplainDistributedQueries = true;
 bool ExplainAllTasks = false;
+bool ExplainWorkerQuery = false;
+
+typedef struct {
+	bool verbose;
+	bool costs;
+	bool buffers;
+	bool timing;
+	bool summary;
+	bool query;
+	ExplainFormat format;
+} ExplainOptions;
+
+static bool SaveTaskExplainPlans = false;
+static ExplainOptions TaskExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
+static StringInfo SavedExplainPlan = NULL;
+
+static ExplainOptions CurrentExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
 
 
 /* Result for a single remote EXPLAIN command */
@@ -665,6 +682,63 @@ BuildRemoteExplainQuery(char *queryString, ExplainState *es)
 
 
 bool
+ShouldSaveQueryExplain(QueryDesc *queryDesc, int eflags)
+{
+	PlannedStmt *plannedStmt = queryDesc->plannedstmt;
+
+	return SaveTaskExplainPlans &&
+			ExecutorLevel == 0 &&
+			!IsParallelWorker() &&
+			(eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0 &&
+			!IsCitusPlan(plannedStmt->planTree);
+}
+
+
+void
+SaveQueryExplain(QueryDesc *queryDesc)
+{
+	/*
+	 * Make sure stats accumulation is done.  (Note: it's okay if several
+	 * levels of hook all do this.)
+	 */
+	InstrEndLoop(queryDesc->totaltime);
+
+	ExplainState *es = NewExplainState();
+
+	es->analyze = true;
+	es->verbose = TaskExplainOptions.verbose;
+	es->buffers = TaskExplainOptions.buffers;
+	es->timing = TaskExplainOptions.timing;
+	es->summary = TaskExplainOptions.summary;
+	es->format = TaskExplainOptions.format;
+	es->costs = TaskExplainOptions.costs;
+
+	ExplainBeginOutput(es);
+
+	if (TaskExplainOptions.query)
+	{
+		ExplainQueryText(es, queryDesc);
+	}
+
+	ExplainPrintPlan(es, queryDesc);
+
+	if (es->costs)
+		ExplainPrintJITSummary(es, queryDesc);
+
+	ExplainEndOutput(es);
+
+	MemoryContext oldContext = MemoryContextSwitchTo(TopMemoryContext);
+
+	SavedExplainPlan = makeStringInfo();
+	appendStringInfoString(SavedExplainPlan, es->str->data);
+
+	MemoryContextSwitchTo(oldContext);
+
+	pfree(es->str->data);
+}
+
+
+bool
 RequestedForExplainPlan(CustomScanState *node)
 {
 	return (node->ss.ps.state->es_instrument != 0);
@@ -685,8 +759,16 @@ InstallExplainAnalyzeHooks(List *taskList)
 static void
 SendExplainParams(Task *task, MultiConnection *connection)
 {
-	const char *query = "SELECT save_explain_output_for_next_query(true, false, true, true, false, 0)";
-	int execResult = ExecuteOptionalRemoteCommand(connection, query, NULL);
+	StringInfo query = makeStringInfo();
+	appendStringInfo(query, "SELECT save_explain_output_for_next_query(true, %s, %s, %s, %s, %s, %d)",
+					 CurrentExplainOptions.verbose ? "true" : "false",
+					 CurrentExplainOptions.costs ? "true" : "false",
+					 CurrentExplainOptions.timing ? "true" : "false",
+					 CurrentExplainOptions.summary ? "true" : "false",
+					 CurrentExplainOptions.query ? "true" : "false",
+					 (int) CurrentExplainOptions.format);
+
+	int execResult = ExecuteOptionalRemoteCommand(connection, query->data, NULL);
 	if (execResult != RESPONSE_OKAY)
 	{
 		elog(WARNING, "failed to send explain params");
@@ -717,6 +799,66 @@ FetchTaskExplainPlan(Task *task, MultiConnection *connection)
 	ClearResults(connection, false);
 }
 
+
+PG_FUNCTION_INFO_V1(last_saved_plan);
+Datum
+last_saved_plan(PG_FUNCTION_ARGS)
+{
+	if (SavedExplainPlan == NULL)
+	{
+		PG_RETURN_NULL();
+	}
+	else
+	{
+		PG_RETURN_TEXT_P(cstring_to_text(SavedExplainPlan->data));
+	}
+}
+
+PG_FUNCTION_INFO_V1(save_explain_output_for_next_query);
+Datum
+save_explain_output_for_next_query(PG_FUNCTION_ARGS)
+{
+	SaveTaskExplainPlans = PG_GETARG_BOOL(0);
+	TaskExplainOptions.verbose = PG_GETARG_BOOL(1);
+	TaskExplainOptions.costs = PG_GETARG_BOOL(2);
+	TaskExplainOptions.timing = PG_GETARG_BOOL(3);
+	TaskExplainOptions.summary = PG_GETARG_BOOL(4);
+	TaskExplainOptions.query = PG_GETARG_BOOL(5);
+	TaskExplainOptions.format = (ExplainFormat) PG_GETARG_INT32(6);
+
+	PG_RETURN_VOID();
+}
+
+
+void
+CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
+					 ExplainState *es, const char *queryString, ParamListInfo params,
+					 QueryEnvironment *queryEnv)
+{
+	CurrentExplainOptions.costs = es->costs;
+	CurrentExplainOptions.buffers = es->buffers;
+	CurrentExplainOptions.verbose = es->verbose;
+	CurrentExplainOptions.summary = es->summary;
+	CurrentExplainOptions.timing = es->timing;
+	CurrentExplainOptions.format = es->format;
+	CurrentExplainOptions.query = ExplainWorkerQuery;
+
+	/* rest is copied from ExplainOneQuery() */
+	instr_time	planstart,
+				planduration;
+
+	INSTR_TIME_SET_CURRENT(planstart);
+
+	/* plan the query */
+	PlannedStmt *plan = pg_plan_query(query, cursorOptions, params);
+
+	INSTR_TIME_SET_CURRENT(planduration);
+	INSTR_TIME_SUBTRACT(planduration, planstart);
+
+	/* run it (if needed) and produce output */
+	ExplainOnePlan(plan, into, es, queryString, params, queryEnv,
+					&planduration);
+}
 
 /* below are private functions copied from explain.c */
 

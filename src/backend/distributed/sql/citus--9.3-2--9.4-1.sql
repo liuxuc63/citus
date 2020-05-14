@@ -9,7 +9,8 @@ CREATE OR REPLACE FUNCTION last_saved_plan()
 
 CREATE OR REPLACE FUNCTION save_explain_output_for_next_query(
       save_enabled boolean, verbose boolean, costs boolean,
-      timing boolean, summary boolean, format integer)
+      timing boolean, summary boolean, query boolean,
+      format integer)
     RETURNS VOID
     LANGUAGE C STRICT
     AS 'citus';

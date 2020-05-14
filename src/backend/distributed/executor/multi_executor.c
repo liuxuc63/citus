@@ -26,6 +26,7 @@
 #include "distributed/listutils.h"
 #include "distributed/master_protocol.h"
 #include "distributed/multi_executor.h"
+#include "distributed/multi_explain.h"
 #include "distributed/multi_master_planner.h"
 #include "distributed/distributed_planner.h"
 #include "distributed/multi_router_planner.h"
@@ -70,20 +71,6 @@ bool SortReturning = false;
  */
 int ExecutorLevel = 0;
 
-typedef struct {
-	int verbose;
-	int costs;
-	int buffers;
-	int timing;
-	int summary;
-	ExplainFormat format;
-} ExplainOptions;
-
-static bool SaveTaskExplainPlans = false;
-static ExplainOptions TaskExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
-static StringInfo SavedExplainPlan = NULL;
-
-static ExplainOptions CurrentExplainOptions = {0, 0, 0, 0, 0, EXPLAIN_FORMAT_TEXT};
 
 /* local function forward declarations */
 static Relation StubRelation(TupleDesc tupleDescriptor);
@@ -92,77 +79,6 @@ static List * FindCitusCustomScanStates(PlanState *planState);
 static bool CitusCustomScanStateWalker(PlanState *planState,
 									   List **citusCustomScanStates);
 
-
-static bool
-SaveQueryExplain(QueryDesc *queryDesc, int eflags)
-{
-	PlannedStmt *plannedStmt = queryDesc->plannedstmt;
-
-	return SaveTaskExplainPlans &&
-			ExecutorLevel == 0 &&
-			!IsParallelWorker() &&
-			(eflags & EXEC_FLAG_EXPLAIN_ONLY) == 0 &&
-			!IsCitusPlan(plannedStmt->planTree);
-}
-
-
-PG_FUNCTION_INFO_V1(last_saved_plan);
-Datum
-last_saved_plan(PG_FUNCTION_ARGS)
-{
-	if (SavedExplainPlan == NULL)
-	{
-		PG_RETURN_NULL();
-	}
-	else
-	{
-		PG_RETURN_TEXT_P(cstring_to_text(SavedExplainPlan->data));
-	}
-}
-
-PG_FUNCTION_INFO_V1(save_explain_output_for_next_query);
-Datum
-save_explain_output_for_next_query(PG_FUNCTION_ARGS)
-{
-	SaveTaskExplainPlans = PG_GETARG_BOOL(0);
-	TaskExplainOptions.verbose = PG_GETARG_BOOL(1);
-	TaskExplainOptions.costs = PG_GETARG_BOOL(2);
-	TaskExplainOptions.timing = PG_GETARG_BOOL(3);
-	TaskExplainOptions.summary = PG_GETARG_BOOL(4);
-	TaskExplainOptions.format = (ExplainFormat) PG_GETARG_INT32(5);
-
-	PG_RETURN_VOID();
-}
-
-void
-CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
-					 ExplainState *es, const char *queryString, ParamListInfo params,
-					 QueryEnvironment *queryEnv)
-{
-	CurrentExplainOptions.costs = es->costs;
-	CurrentExplainOptions.buffers = es->buffers;
-	CurrentExplainOptions.verbose = es->verbose;
-	CurrentExplainOptions.summary = es->summary;
-	CurrentExplainOptions.timing = es->timing;
-	CurrentExplainOptions.format = es->format;
-
-	/* rest is copied from ExplainOneQuery() */
-	PlannedStmt *plan;
-	instr_time	planstart,
-				planduration;
-
-	INSTR_TIME_SET_CURRENT(planstart);
-
-	/* plan the query */
-	plan = pg_plan_query(query, cursorOptions, params);
-
-	INSTR_TIME_SET_CURRENT(planduration);
-	INSTR_TIME_SUBTRACT(planduration, planstart);
-
-	/* run it (if needed) and produce output */
-	ExplainOnePlan(plan, into, es, queryString, params, queryEnv,
-					&planduration);
-}
 
 /*
  * CitusExecutorStart is the ExecutorStart_hook that gets called when
@@ -173,7 +89,7 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	PlannedStmt *plannedStmt = queryDesc->plannedstmt;
 
-	if (SaveQueryExplain(queryDesc, eflags))
+	if (ShouldSaveQueryExplain(queryDesc, eflags))
 	{
 		queryDesc->instrument_options |= INSTRUMENT_TIMER;
 		queryDesc->instrument_options |= INSTRUMENT_BUFFERS;
@@ -211,7 +127,7 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
 		standard_ExecutorStart(queryDesc, eflags);
 	}
 
-	if (SaveQueryExplain(queryDesc, eflags))
+	if (ShouldSaveQueryExplain(queryDesc, eflags))
 	{
 		/*
 		 * Set up to track total elapsed time in ExecutorRun.  Make sure the
@@ -338,45 +254,10 @@ CitusExecutorRun(QueryDesc *queryDesc,
 void
 CitusExecutorEnd(QueryDesc *queryDesc)
 {
-	if (!SaveQueryExplain(queryDesc, 0) ||
-		!queryDesc->totaltime)
+	if (ShouldSaveQueryExplain(queryDesc, 0) && queryDesc->totaltime)
 	{
-		standard_ExecutorEnd(queryDesc);
-		return;
+		SaveQueryExplain(queryDesc);
 	}
-
-	/*
-	 * Make sure stats accumulation is done.  (Note: it's okay if several
-	 * levels of hook all do this.)
-	 */
-	InstrEndLoop(queryDesc->totaltime);
-
-	ExplainState *es = NewExplainState();
-
-	es->analyze = true;
-	es->verbose = TaskExplainOptions.verbose;
-	es->buffers = TaskExplainOptions.buffers;
-	es->timing = TaskExplainOptions.timing;
-	es->summary = TaskExplainOptions.summary;
-	es->format = TaskExplainOptions.format;
-
-	ExplainBeginOutput(es);
-	ExplainPrintPlan(es, queryDesc);
-
-	if (es->costs)
-		ExplainPrintJITSummary(es, queryDesc);
-
-	ExplainEndOutput(es);
-
-	MemoryContext oldContext = MemoryContextSwitchTo(TopMemoryContext);
-
-	SavedExplainPlan = makeStringInfo();
-	appendStringInfoString(SavedExplainPlan, es->str->data);
-
-	MemoryContextSwitchTo(oldContext);
-
-	pfree(es->str->data);
-	SaveTaskExplainPlans = false;
 
 	standard_ExecutorEnd(queryDesc);
 }
