@@ -595,3 +595,10 @@ SELECT true AS valid FROM explain_xml($$
   )
   SELECT * FROM result JOIN series ON (s = l_quantity) JOIN orders_hash_part ON (s = o_orderkey)
 $$);
+
+-- test EXPLAIN ANALYZE works fine with primary keys
+CREATE TABLE explain_pk(a int primary key, b int);
+SELECT create_distributed_table('explain_pk', 'a');
+EXPLAIN (COSTS off, ANALYZE on, TIMING off, SUMMARY off) INSERT INTO explain_pk VALUES (1, 2), (2, 3);
+SELECT * FROM explain_pk ORDER BY 1;
+DROP TABLE explain_pk;

@@ -1341,3 +1341,19 @@ SELECT true AS valid FROM explain_xml($$
   SELECT * FROM result JOIN series ON (s = l_quantity) JOIN orders_hash_part ON (s = o_orderkey)
 $$);
 t
+-- test EXPLAIN ANALYZE works fine with primary keys
+CREATE TABLE explain_pk(a int primary key, b int);
+SELECT create_distributed_table('explain_pk', 'a');
+
+EXPLAIN (COSTS off, ANALYZE on, TIMING off, SUMMARY off) INSERT INTO explain_pk VALUES (1, 2), (2, 3);
+Custom Scan (Citus Adaptive) (actual rows=0 loops=1)
+  Task Count: 2
+  Tasks Shown: One of 2
+  ->  Task
+        Node: host=localhost port=xxxxx dbname=regression
+        ->  Insert on explain_pk_570004 citus_table_alias (actual rows=0 loops=1)
+              ->  Result (actual rows=1 loops=1)
+SELECT * FROM explain_pk ORDER BY 1;
+1|2
+2|3
+DROP TABLE explain_pk;
