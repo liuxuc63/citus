@@ -1809,7 +1809,7 @@ SingleShardSelectTaskList(Query *query, uint64 jobId, List *relationShardList,
 						  List *placementList, uint64 shardId,
 						  bool parametersInQueryResolved)
 {
-	Task *task = CreateTask(SELECT_TASK);
+	Task *task = CreateTask(READ_TASK);
 	List *relationRowLockList = NIL;
 
 	RowLocksOnRelations((Node *) query, &relationRowLockList);
