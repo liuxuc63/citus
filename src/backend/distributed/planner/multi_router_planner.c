@@ -208,6 +208,8 @@ CreateModifyPlan(Query *originalQuery, Query *query,
 	DistributedPlan *distributedPlan = CitusMakeNode(DistributedPlan);
 	bool multiShardQuery = false;
 
+	Assert(originalQuery->commandType != CMD_SELECT);
+
 	distributedPlan->modLevel = RowModifyLevelForQuery(query);
 
 	distributedPlan->planningError = ModifyQuerySupported(query, originalQuery,
