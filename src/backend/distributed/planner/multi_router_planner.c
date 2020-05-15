@@ -3116,7 +3116,7 @@ ExtractInsertPartitionKeyValue(Query *query)
 /*
  * MultiRouterPlannableQuery checks if given select query is router plannable,
  * setting distributedPlan->planningError if not.
- * The query is router plannable if it is a modify query, or if its is a select
+ * The query is router plannable if it is a modify query, or if it is a select
  * query issued on a hash partitioned distributed table. Router plannable checks
  * for select queries can be turned off by setting citus.enable_router_execution
  * flag to false.
@@ -3177,7 +3177,7 @@ MultiRouterPlannableQuery(Query *query)
 
 			/*
 			 * Currently, we don't support tables with replication factor > 1,
-			 * except reference tables with SELECT ... FOR UDPATE queries. It is
+			 * except reference tables with SELECT ... FOR UPDATE queries. It is
 			 * also not supported from MX nodes.
 			 */
 			if (query->hasForUpdate)

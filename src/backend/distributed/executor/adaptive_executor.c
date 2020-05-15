@@ -1449,7 +1449,7 @@ ReadOnlyTask(TaskType taskType)
 
 /*
  * SelectForUpdateOnReferenceTable returns true if the input task
- * that contains FOR UPDATE clause that locks any reference tables.
+ * contains a FOR UPDATE clause that locks any reference tables.
  */
 static bool
 SelectForUpdateOnReferenceTable(RowModifyLevel modLevel, List *taskList)
@@ -1676,7 +1676,7 @@ UnclaimAllSessionConnections(List *sessionList)
 
 
 /*
- * AssignTasksToConnectionsOrWorkerPool  goes through the list of tasks to determine whether any
+ * AssignTasksToConnectionsOrWorkerPool goes through the list of tasks to determine whether any
  * task placements need to be assigned to particular connections because of preceding
  * operations in the transaction. It then adds those connections to the pool and adds
  * the task placement executions to the assigned task queue of the connection.
