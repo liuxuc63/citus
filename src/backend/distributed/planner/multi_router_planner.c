@@ -238,13 +238,8 @@ CreateModifyPlan(Query *originalQuery, Query *query,
 	distributedPlan->workerJob = job;
 	distributedPlan->masterQuery = NULL;
 	distributedPlan->routerExecutable = true;
-	distributedPlan->hasReturning = false;
+	distributedPlan->expectResults = originalQuery->returningList != NIL;
 	distributedPlan->targetRelationId = ResultRelationOidForQuery(query);
-
-	if (list_length(originalQuery->returningList) > 0)
-	{
-		distributedPlan->hasReturning = true;
-	}
 
 	distributedPlan->fastPathRouterPlan =
 		plannerRestrictionContext->fastPathRestrictionContext->fastPathRouterQuery;
@@ -283,7 +278,7 @@ CreateSingleTaskRouterPlan(DistributedPlan *distributedPlan, Query *originalQuer
 	distributedPlan->workerJob = job;
 	distributedPlan->masterQuery = NULL;
 	distributedPlan->routerExecutable = true;
-	distributedPlan->hasReturning = false;
+	distributedPlan->expectResults = query->commandType == CMD_SELECT;
 }
 
 
